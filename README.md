@@ -11,6 +11,12 @@ Repo for the data files and Python codes used to construct the global apparent p
 
 Tables S1, S2 and S3 are the supplementary data tables that accompany the paper. Table S1 contains the global plate circuit that is used to rotate the paleomagnetic data to a single reference plate. Table S2 contains the complete paleopole database used to compute the global APWP, with a range of statistical parameters and descriptions of the reliability and age determinations of individual paleopoles. Finally, Table S3 provides the global APWP computed at a 5 Ma resolution.
 
-The following Python codes are provided. These heavily rely on the PmagPy (Tauxe et al. 2016, G-cubed), matplotlib and pandas software packages.
+The Jupyter Notebook named Global_APWP.ipynb was used to perform to calculations and generate the figures of the paper.
+To use the notebook, the following accompanying files are needed:
+- Table_S2.xlsx: global paleomagnetic database, see description above
+- APWP_functions.py: Python code with functions needed for the computation of the APWP
+- Euler_poles_plate_circuit.csv: csv-file with Euler rotation poles computed per million year for each tectonic plate from which data is derived
+- T12_gapwap.xlsx: global APWP by Torsvik et al. (2012, Earth-Science Reviews) - used as reference
+- V23_gapwap.xlsx: global APWP presented in this study - used as reference
 
 
