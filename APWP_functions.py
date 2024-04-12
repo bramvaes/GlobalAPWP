@@ -10,9 +10,8 @@ import pmagpy.ipmag as ipmag
 import matplotlib.pyplot as plt 
 import numpy as np
 import pandas as pd
-import sys
-import vaes_func as vfunc
 from numpy import random
+from numpy import float64
 
 def boot_ref_pole(PPs,Ks,Ns,N_poles,Nb=100,balanced=True):
   """
@@ -33,9 +32,9 @@ def boot_ref_pole(PPs,Ks,Ns,N_poles,Nb=100,balanced=True):
   
   # generate Nb pseudopoles from parametrically sampled VGPs
   if balanced==True:
-    boot_means = [vfunc.gen_pseudopoles(PPs,Ks,Ns,N_poles) for i in range(Nb)]
+    boot_means = [gen_pseudopoles(PPs,Ks,Ns,N_poles) for i in range(Nb)]
   else:
-    boot_means = [vfunc.unb_pseudopoles(PPs,Ks,Ns,N_poles) for i in range(Nb)]
+    boot_means = [unb_pseudopoles(PPs,Ks,Ns,N_poles) for i in range(Nb)]
 
   # print mean of Nb bootstrap means and associated statistical parameters
   bpars = pmag.fisher_mean(boot_means)
@@ -154,7 +153,7 @@ def get_pseudo_vgps(plons,plats,Ks,Ns,plate_IDs,age,min_age,max_age,sim_age=True
     N_poles = len(plons)
 
     # generate nested list of parametrically sampled VGPs
-    vgps_nested_list = [vfunc.fish_VGPs(K=Ks[j],n=Ns[j],lon=plons[j],lat=plats[j]) for j in range(N_poles)]
+    vgps_nested_list = [fish_VGPs(K=Ks[j],n=Ns[j],lon=plons[j],lat=plats[j]) for j in range(N_poles)]
     vgps_list = [vgps_nested_list[i][j] for i in range(N_poles) for j in range(Ns[i])]
 
     # create dataframe
@@ -195,7 +194,7 @@ def rotate_with_ep(plon,plat,age,plate_ID,EP_data,output_type):
   indx = np.where((EP_data[:,0] == plate_ID) & (EP_data[:,1] == rounded_age))
 
   # rotate pole with Euler pole
-  rlon,rlat = vfunc.pt_rot([EP_data[indx,2][0][0], EP_data[indx,3][0][0],EP_data[indx,4][0][0]],[plat],[plon])
+  rlon,rlat = pt_rot([EP_data[indx,2][0][0], EP_data[indx,3][0][0],EP_data[indx,4][0][0]],[plat],[plon])
 
   # specify output
   if output_type == 'rvgps':
@@ -306,3 +305,155 @@ def get_resampled_sed_poles(dataframe):
             new_dataframe['plon'][index], new_dataframe['plat'][index] = new_plon[0],new_plat[0]
     
     return new_dataframe
+
+# ------------------------
+# 12/04/2024: ADDED FUNCTION FROM VAES_FUNC.PY TO HAVE ALL RELEVANT FUNCTIONS IN SAME FILE
+# ------------------------
+
+def fish_VGPs(K=20, n=100, lon=0, lat=90):
+    """
+    Generates Fisher distributed unit vectors from a specified distribution
+    using the pmag.py fshdev and dodirot functions.
+    Parameters
+    ----------
+    k : kappa precision parameter (default is 20)
+    n : number of vectors to determine (default is 100)
+    lon : mean longitude of distribution (default is 0)
+    lat : mean latitude of distribution (default is 90)
+    di_block : this function returns a nested list of [lon,lat] as the default
+    if di_block = False it will return a list of lon and a list of lat
+    Returns
+    ---------
+    di_block : a nested list of [lon,lat] (default)
+    lon,lat : a list of lon and a list of lat (if di_block = False)
+    """
+
+    k = np.array(K)
+    R1 = np.random.random(size=n)
+    R2 = np.random.random(size=n)
+    L = np.exp(-2 * k)
+    a = R1 * (1 - L) + L
+    fac = np.sqrt(-np.log(a)/(2 * k))
+    inc = 90. - np.degrees(2 * np.arcsin(fac))
+    dec = np.degrees(2 * np.pi * R2)
+
+    DipDir, Dip = np.ones(n, dtype=float).transpose(
+    )*(lon-180.), np.ones(n, dtype=float).transpose()*(90.-lat)
+    data = np.array([dec, inc, DipDir, Dip]).transpose()
+    drot, irot = pmag.dotilt_V(data)
+    drot = (drot-180.) % 360.  #
+    VGPs = np.column_stack((drot, irot))
+    # rot_data = np.column_stack((drot, irot))
+    # VGPs = rot_data.tolist()
+
+    # for data in range(n):
+    #     lo, la = pmag.fshdev(K)
+    #     drot, irot = pmag.dodirot(lo, la, lon, lat)
+    #     VGPs.append([drot, irot])
+    return VGPs
+
+def gen_pseudopoles(ref_poles,kappas,ns,N_ref_poles,N_test=0,equal_N=False):
+    """
+    Generates pseudopole from reference dataset of paleopoles with N and K
+    """
+
+    # generate nested list of parametrically sampled VGPs
+    nested_VGPs = [fish_VGPs(K=kappas[j],n=ns[j],lon=ref_poles[j][0],lat=ref_poles[j][1]) for j in range(N_ref_poles)]
+    # create single list with all simulated VGPs
+    sim_VGPs = [nested_VGPs[i][j] for i in range(N_ref_poles) for j in range(ns[i])]
+    #print(sim_VGPs)
+
+    # if equal_N==True:
+    #     # select random VGPs from dataset
+    #     Inds = np.random.randint(len(sim_VGPs), size=N_test)
+    #     #print(Inds)
+    #     D = np.array(sim_VGPs)
+    #     sample = D[Inds]
+    # else:
+    #     sample = sim_VGPs
+
+    # compute pseudopole
+    polepars = pmag.fisher_mean(sim_VGPs)
+    return [polepars['dec'], polepars['inc']]
+
+def unb_pseudopoles(ref_poles,kappas,ns,N_ref_poles,N_test=0,equal_N=False):
+    """
+    Generates pseudopole from reference dataset of paleopoles with N and K. Poles are randomly drawn with replacement.
+    """
+
+    # generate random integers between 0 and N_ref_poles
+    inds = np.random.randint(N_ref_poles,size=N_ref_poles)
+    #print(inds)
+
+    # generate nested list of parametrically sampled VGPs
+    nested_VGPs = [fish_VGPs(K=kappas[j],n=ns[j],lon=ref_poles[j][0],lat=ref_poles[j][1]) for j in inds]
+    # create single list with all simulated VGPs
+    # can this be done better/faster?!
+    sim_VGPs = [nested_VGPs[i][j] for i in range(N_ref_poles) for j in range(len(nested_VGPs[i]))]
+    #print(sim_VGPs)
+
+    # if equal_N==True:
+    #     # select random VGPs from dataset
+    #     Inds = np.random.randint(len(sim_VGPs), size=N_test)
+    #     #print(Inds)
+    #     D = np.array(sim_VGPs)
+    #     sample = D[Inds]
+    # else:
+    #     sample = sim_VGPs
+
+    # compute pseudopole
+    polepars = pmag.fisher_mean(sim_VGPs)
+    return [polepars['dec'], polepars['inc']]
+
+def pt_rot(EP, Lats, Lons):
+    """
+    Rotates points on a globe by an Euler pole rotation using method of
+    Cox and Hart 1986, box 7-3.
+    Parameters
+    ----------
+    EP : Euler pole list [lat,lon,angle] specifying the location of the pole;
+    the angle is for a counterclockwise rotation about the pole
+    Lats : list of latitudes of points to be rotated
+    Lons : list of longitudes of points to be rotated
+    Returns
+    _________
+    RLats : list of rotated latitudes
+    RLons : list of rotated longitudes
+    """
+# gets user input of Rotation pole lat,long, omega for plate and converts
+# to radians
+    E = pmag.dir2cart([EP[1], EP[0], 1.])  # EP is pole lat,lon omega
+    omega = np.radians(EP[2])  # convert to radians
+    RLats, RLons = [], []
+    for k in range(len(Lats)):
+        if Lats[k] <= 90.:  # peel off delimiters
+            # converts to rotation pole to cartesian coordinates
+            A = pmag.dir2cart([Lons[k], Lats[k], 1.])
+# defines cartesian coordinates of the pole A
+            R = [[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]]
+            R[0][0] = E[0] * E[0] * (1 - np.cos(omega)) + np.cos(omega)
+            R[0][1] = E[0] * E[1] * (1 - np.cos(omega)) - E[2] * np.sin(omega)
+            R[0][2] = E[0] * E[2] * (1 - np.cos(omega)) + E[1] * np.sin(omega)
+            R[1][0] = E[1] * E[0] * (1 - np.cos(omega)) + E[2] * np.sin(omega)
+            R[1][1] = E[1] * E[1] * (1 - np.cos(omega)) + np.cos(omega)
+            R[1][2] = E[1] * E[2] * (1 - np.cos(omega)) - E[0] * np.sin(omega)
+            R[2][0] = E[2] * E[0] * (1 - np.cos(omega)) - E[1] * np.sin(omega)
+            R[2][1] = E[2] * E[1] * (1 - np.cos(omega)) + E[0] * np.sin(omega)
+            R[2][2] = E[2] * E[2] * (1 - np.cos(omega)) + np.cos(omega)
+# sets up rotation matrix
+            Ap = [0, 0, 0]
+            for i in range(3):
+                for j in range(3):
+                    Ap[i] += R[i][j] * A[j]
+# does the rotation
+            Prot = pmag.cart2dir(Ap)
+            RLats.append(Prot[1])
+            RLons.append(Prot[0])
+        else:  # preserve delimiters
+            RLats.append(Lats[k])
+            RLons.append(Lons[k])
+
+    if len(Lats)==1:
+        return RLons[0],RLats[0]
+    else:
+        return RLons, RLats
